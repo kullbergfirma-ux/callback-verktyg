@@ -1,0 +1,9 @@
+{
+  "name": "callback-verktyg",
+  "version": "1.0.0",
+  "description": "Netlify functions for 46elks voice callback routing via Google Sheets",
+  "private": true,
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  }
+}
