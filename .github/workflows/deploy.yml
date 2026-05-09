@@ -17,13 +17,18 @@ jobs:
 
       - run: npm ci
 
-      - name: Deploy to Netlify
-        uses: nwtgck/actions-netlify@v3
-        with:
-          publish-dir: "."
-          functions-dir: "netlify/functions"
-          production-deploy: true
-          netlify-config-path: "./netlify.toml"
+      - name: Install Netlify CLI
+        run: npm install -g netlify-cli
+
+      - name: Write site link
+        run: |
+          mkdir -p .netlify
+          printf '{"siteId":"%s"}' "$NETLIFY_SITE_ID" > .netlify/state.json
+          cat .netlify/state.json
+        env:
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Deploy
+        run: netlify deploy --prod --dir=. --functions=netlify/functions
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
