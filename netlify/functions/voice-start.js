@@ -85,7 +85,6 @@ exports.handler = async (event) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       say: "Vi kan inte svara just nu, vi hör av oss inom kort.",
-      voice: "se-F",
       next: nextUrl.toString(),
     }),
   };
