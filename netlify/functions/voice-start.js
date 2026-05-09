@@ -10,11 +10,10 @@ exports.handler = async (event) => {
   const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
 
   if (!timeoutWebhookUrl || !spreadsheetId || !serviceAccountKey) {
-    console.error("Saknade miljövariabler: TIMEOUT_WEBHOOK_URL, GOOGLE_SHEETS_ID eller GOOGLE_SERVICE_ACCOUNT_KEY");
+    console.error("Saknade miljövariabler");
     return { statusCode: 500, body: "Konfigurationsfel" };
   }
 
-  // Hämta "to"-fältet från 46elks POST-body (vilket 46elks-nummer som ringdes)
   const params = new URLSearchParams(event.body || "");
   const elkNumber = params.get("to");
 
@@ -31,7 +30,6 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: "Konfigurationsfel: ogiltig service account" };
   }
 
-  // Autentisera mot Google Sheets med service account
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
@@ -55,17 +53,14 @@ exports.handler = async (event) => {
     return { statusCode: 404, body: "Inga rader hittades i Google Sheets" };
   }
 
-  // Hitta kolumnindex för elk_number och sender_phone
   const headers = rows[0];
   const elkCol = headers.indexOf("elk_number");
-  const phoneCol = headers.indexOf("sender_phone");
 
-  if (elkCol === -1 || phoneCol === -1) {
-    console.error("Kolumnerna 'elk_number' eller 'sender_phone' saknas i sheetet");
+  if (elkCol === -1) {
+    console.error("Kolumnen 'elk_number' saknas i sheetet");
     return { statusCode: 500, body: "Felaktig sheetstruktur" };
   }
 
-  // Sök upp raden med matchande elk_number
   const matchRow = rows.slice(1).find((row) => row[elkCol] === elkNumber);
 
   if (!matchRow) {
@@ -73,19 +68,12 @@ exports.handler = async (event) => {
     return { statusCode: 404, body: "Inget matchande nummer i Google Sheets" };
   }
 
-  const hantverkareNummer = matchRow[phoneCol];
-
-  if (!hantverkareNummer) {
-    console.error(`sender_phone saknas för elk_number: ${elkNumber}`);
-    return { statusCode: 404, body: "Hantverarens nummer saknas" };
-  }
-
   return {
     statusCode: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      connect: hantverkareNummer,
-      timeout: 15,
+      say: "Vi kan inte svara just nu, vi hör av oss inom kort.",
+      voice: "se-F",
       next: timeoutWebhookUrl,
     }),
   };
