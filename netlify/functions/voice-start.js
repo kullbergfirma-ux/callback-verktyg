@@ -15,11 +15,12 @@ exports.handler = async (event) => {
   }
 
   const params = new URLSearchParams(event.body || "");
+  const customerPhone = params.get("from");
   const elkNumber = params.get("to");
 
-  if (!elkNumber) {
-    console.error("Saknat 'to'-fält i anropet från 46elks");
-    return { statusCode: 400, body: "Saknat fält: to" };
+  if (!customerPhone || !elkNumber) {
+    console.error("Saknade fält i anropet från 46elks:", { customerPhone, elkNumber });
+    return { statusCode: 400, body: "Saknade fält: from och/eller to" };
   }
 
   let credentials;
@@ -55,9 +56,11 @@ exports.handler = async (event) => {
 
   const headers = rows[0];
   const elkCol = headers.indexOf("elk_number");
+  const companyCol = headers.indexOf("company_name");
+  const phoneCol = headers.indexOf("sender_phone");
 
-  if (elkCol === -1) {
-    console.error("Kolumnen 'elk_number' saknas i sheetet");
+  if (elkCol === -1 || companyCol === -1 || phoneCol === -1) {
+    console.error("Saknade kolumner i sheetet:", { elkCol, companyCol, phoneCol });
     return { statusCode: 500, body: "Felaktig sheetstruktur" };
   }
 
@@ -68,13 +71,22 @@ exports.handler = async (event) => {
     return { statusCode: 404, body: "Inget matchande nummer i Google Sheets" };
   }
 
+  const companyName = matchRow[companyCol] || "";
+  const senderPhone = matchRow[phoneCol] || "";
+
+  const nextUrl = new URL(timeoutWebhookUrl);
+  nextUrl.searchParams.set("customer_phone", customerPhone);
+  nextUrl.searchParams.set("elk_number", elkNumber);
+  nextUrl.searchParams.set("company_name", companyName);
+  nextUrl.searchParams.set("sender_phone", senderPhone);
+
   return {
     statusCode: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       say: "Vi kan inte svara just nu, vi hör av oss inom kort.",
       voice: "se-F",
-      next: timeoutWebhookUrl,
+      next: nextUrl.toString(),
     }),
   };
 };
