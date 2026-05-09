@@ -84,8 +84,11 @@ exports.handler = async (event) => {
     statusCode: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      play: "https://callback-verktyg.netlify.app/public/message.mp3",
-      next: nextUrl.toString(),
+      play: "https://callback-verktyg.netlify.app/public/ring.wav",
+      next: {
+        play: "https://callback-verktyg.netlify.app/public/message.mp3",
+        next: nextUrl.toString(),
+      },
     }),
   };
 };
