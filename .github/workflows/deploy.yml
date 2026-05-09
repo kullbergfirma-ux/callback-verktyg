@@ -17,4 +17,12 @@ jobs:
 
       - run: npm ci
 
-      - run: npx netlify-cli deploy --prod --dir=. --functions=netlify/functions --site=${{ secrets.NETLIFY_SITE_ID }} --auth=${{ secrets.NETLIFY_AUTH_TOKEN }}
+      - name: Write Netlify site link
+        run: |
+          mkdir -p .netlify
+          echo '{"siteId":"${{ secrets.NETLIFY_SITE_ID }}"}' > .netlify/state.json
+
+      - name: Deploy to Netlify
+        run: npx netlify-cli deploy --prod --dir=. --functions=netlify/functions
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
