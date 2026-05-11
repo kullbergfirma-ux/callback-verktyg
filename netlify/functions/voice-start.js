@@ -86,7 +86,9 @@ exports.handler = async (event) => {
 
   console.log(`Kopplar ${customerPhone} → ${senderPhone} (${companyName}), timeout 20s, whenhangup → Make`);
 
-  // whenhangup anropas av 46elks när samtalet avslutas (oavsett om det svarades eller ej).
+  // whenhangup triggas av 46elks när samtalet avslutas, inklusive vid failed/busy.
+  // busy/failed definieras explicit som hangup så att 46elks alltid avslutar rent
+  // och whenhangup garanterat anropas oavsett utfall.
   // Make-scenariot ska filtrera på state != "success" för att bara skicka SMS vid missade samtal.
   return {
     statusCode: 200,
@@ -94,6 +96,8 @@ exports.handler = async (event) => {
     body: JSON.stringify({
       connect: senderPhone,
       timeout: "20",
+      busy: { hangup: "" },
+      failed: { hangup: "" },
       whenhangup: webhookUrl.toString(),
     }),
   };
