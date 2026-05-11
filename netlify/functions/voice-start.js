@@ -5,90 +5,104 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
-  const timeoutWebhookUrl = process.env.TIMEOUT_WEBHOOK_URL;
-  const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
-  const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  const { TIMEOUT_WEBHOOK_URL, GOOGLE_SHEETS_ID, GOOGLE_SERVICE_ACCOUNT_KEY } = process.env;
 
-  if (!timeoutWebhookUrl || !spreadsheetId || !serviceAccountKey) {
-    console.error("Saknade miljövariabler");
-    return { statusCode: 500, body: "Konfigurationsfel" };
+  if (!TIMEOUT_WEBHOOK_URL || !GOOGLE_SHEETS_ID || !GOOGLE_SERVICE_ACCOUNT_KEY) {
+    console.error("Saknade miljövariabler: TIMEOUT_WEBHOOK_URL, GOOGLE_SHEETS_ID, GOOGLE_SERVICE_ACCOUNT_KEY");
+    return hangup();
   }
 
+  // 46elks skickar from (kundens nummer) och to (elk_number som ringdes)
   const params = new URLSearchParams(event.body || "");
   const customerPhone = params.get("from");
   const elkNumber = params.get("to");
 
   if (!customerPhone || !elkNumber) {
-    console.error("Saknade fält i anropet från 46elks:", { customerPhone, elkNumber });
-    return { statusCode: 400, body: "Saknade fält: from och/eller to" };
+    console.error("Saknade fält från 46elks:", { customerPhone, elkNumber });
+    return hangup();
   }
 
   let credentials;
   try {
-    credentials = JSON.parse(serviceAccountKey);
-  } catch {
-    console.error("Ogiltig JSON i GOOGLE_SERVICE_ACCOUNT_KEY");
-    return { statusCode: 500, body: "Konfigurationsfel: ogiltig service account" };
+    credentials = JSON.parse(GOOGLE_SERVICE_ACCOUNT_KEY);
+  } catch (e) {
+    console.error("Ogiltig JSON i GOOGLE_SERVICE_ACCOUNT_KEY:", e.message);
+    return hangup();
   }
 
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
   });
-
   const sheets = google.sheets({ version: "v4", auth });
 
   let rows;
   try {
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
+      spreadsheetId: GOOGLE_SHEETS_ID,
       range: "A:Z",
     });
     rows = response.data.values;
-  } catch (err) {
-    console.error("Google Sheets-fel:", err.message);
-    return { statusCode: 502, body: "Kunde inte hämta data från Google Sheets" };
+  } catch (e) {
+    console.error("Google Sheets-fel:", e.message);
+    return hangup();
   }
 
   if (!rows || rows.length < 2) {
-    return { statusCode: 404, body: "Inga rader hittades i Google Sheets" };
+    console.error("Inga rader i Google Sheets");
+    return hangup();
   }
 
   const headers = rows[0];
   const elkCol = headers.indexOf("elk_number");
-  const companyCol = headers.indexOf("company_name");
   const phoneCol = headers.indexOf("sender_phone");
+  const companyCol = headers.indexOf("company_name");
 
-  if (elkCol === -1 || companyCol === -1 || phoneCol === -1) {
-    console.error("Saknade kolumner i sheetet:", { elkCol, companyCol, phoneCol });
-    return { statusCode: 500, body: "Felaktig sheetstruktur" };
+  if (elkCol === -1 || phoneCol === -1 || companyCol === -1) {
+    console.error("Saknade kolumner i sheetet. Hittade:", headers.join(", "));
+    return hangup();
   }
 
   const matchRow = rows.slice(1).find((row) => row[elkCol] === elkNumber);
-
   if (!matchRow) {
-    console.error(`Inget 46elks-nummer hittades i sheetet: ${elkNumber}`);
-    return { statusCode: 404, body: "Inget matchande nummer i Google Sheets" };
+    console.error("Inget matchande elk_number i sheetet:", elkNumber);
+    return hangup();
   }
 
-  const companyName = matchRow[companyCol] || "";
   const senderPhone = matchRow[phoneCol] || "";
+  const companyName = matchRow[companyCol] || "";
 
-  const nextUrl = new URL(timeoutWebhookUrl);
-  nextUrl.searchParams.set("customer_phone", customerPhone);
-  nextUrl.searchParams.set("elk_number", elkNumber);
-  nextUrl.searchParams.set("company_name", companyName);
-  nextUrl.searchParams.set("sender_phone", senderPhone);
+  if (!senderPhone) {
+    console.error("Tomt sender_phone för elk_number:", elkNumber);
+    return hangup();
+  }
 
+  // Bygg Make-webhook-URL med alla parametrar som query-strängar
+  const webhookUrl = new URL(TIMEOUT_WEBHOOK_URL);
+  webhookUrl.searchParams.set("customer_phone", customerPhone);
+  webhookUrl.searchParams.set("elk_number", elkNumber);
+  webhookUrl.searchParams.set("company_name", companyName);
+  webhookUrl.searchParams.set("sender_phone", senderPhone);
+
+  console.log(`Kopplar ${customerPhone} → ${senderPhone} (${companyName}), timeout 20s, whenhangup → Make`);
+
+  // whenhangup anropas av 46elks när samtalet avslutas (oavsett om det svarades eller ej).
+  // Make-scenariot ska filtrera på state != "success" för att bara skicka SMS vid missade samtal.
   return {
     statusCode: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      play: "https://callback-verktyg.netlify.app/public/ring.wav",
-      next: {
-        play: "https://callback-verktyg.netlify.app/public/message.mp3",
-        next: nextUrl.toString(),
-      },
+      connect: senderPhone,
+      timeout: "20",
+      whenhangup: webhookUrl.toString(),
     }),
   };
 };
+
+function hangup() {
+  return {
+    statusCode: 200,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hangup: "" }),
+  };
+}
