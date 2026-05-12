@@ -1,14 +1,11 @@
 const { google } = require("googleapis");
 
-// Module-level cache: lever kvar i lambda-instansen mellan anrop.
-// Täcker rapid-retry-scenariot där 46elks anropar samma callid flera gånger snabbt.
 const seenCallIds = new Map();
-const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minuter
+const DEDUP_TTL_MS = 5 * 60 * 1000;
 
 function isDuplicate(callId) {
   if (!callId) return false;
   const now = Date.now();
-  // Rensa utgångna poster
   for (const [id, ts] of seenCallIds) {
     if (now - ts > DEDUP_TTL_MS) seenCallIds.delete(id);
   }
@@ -29,13 +26,11 @@ exports.handler = async (event) => {
     return hangup();
   }
 
-  // 46elks skickar from (kundens nummer), to (elk_number), callid (unikt samtal-ID)
   const params = new URLSearchParams(event.body || "");
   const customerPhone = params.get("from");
   const elkNumber = params.get("to");
   const callId = params.get("callid");
 
-  // Dedupliceringskontroll baserad på callid
   if (isDuplicate(callId)) {
     console.log("Duplikat callid ignorerat:", callId);
     return hangup();
@@ -107,19 +102,14 @@ exports.handler = async (event) => {
   webhookUrl.searchParams.set("company_name", companyName);
   webhookUrl.searchParams.set("sender_phone", senderPhone);
 
-  console.log(`[${callId || "no-callid"}] Kopplar ${customerPhone} → ${senderPhone} (${companyName}), timeout 15s`);
+  try {
+    const res = await fetch(webhookUrl.toString());
+    console.log(`[${callId || "no-callid"}] Make webhook anropad: ${res.status}`);
+  } catch (e) {
+    console.error("Make webhook-fel:", e.message);
+  }
 
-  return {
-    statusCode: 200,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      connect: senderPhone,
-      timeout: "15",
-      busy: { hangup: "" },
-      failed: { hangup: "" },
-      whenhangup: webhookUrl.toString(),
-    }),
-  };
+  return hangup();
 };
 
 function hangup() {
