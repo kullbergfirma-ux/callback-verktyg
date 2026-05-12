@@ -95,7 +95,7 @@ exports.handler = async (event) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       connect: senderPhone,
-      timeout: "20",
+      timeout: "15",
       busy: { hangup: "" },
       failed: { hangup: "" },
       whenhangup: webhookUrl.toString(),
