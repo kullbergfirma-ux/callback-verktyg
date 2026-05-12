@@ -1,4 +1,5 @@
 const { google } = require("googleapis");
+const { getStore } = require("@netlify/blobs");
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
@@ -12,10 +13,28 @@ exports.handler = async (event) => {
     return hangup();
   }
 
-  // 46elks skickar from (kundens nummer) och to (elk_number som ringdes)
+  // 46elks skickar from (kundens nummer), to (elk_number), callid (unikt samtal-ID)
   const params = new URLSearchParams(event.body || "");
   const customerPhone = params.get("from");
   const elkNumber = params.get("to");
+  const callId = params.get("callid");
+
+  // Dedupliceringskontroll: om samma callid redan behandlats inom 5 minuter, avbryt direkt
+  if (callId) {
+    try {
+      const store = getStore("call-dedup");
+      const alreadySeen = await store.get(callId);
+      if (alreadySeen) {
+        console.log("Duplikat callid ignorerat:", callId);
+        return hangup();
+      }
+      // Märk callid som hanterat, TTL 300 sekunder (5 minuter)
+      await store.set(callId, "1", { ttl: 300 });
+    } catch (e) {
+      // Om Blobs inte är tillgängligt loggar vi felet men blockerar inte samtalet
+      console.error("Dedup-cache fel (fortsätter ändå):", e.message);
+    }
+  }
 
   if (!customerPhone || !elkNumber) {
     console.error("Saknade fält från 46elks:", { customerPhone, elkNumber });
@@ -77,19 +96,14 @@ exports.handler = async (event) => {
     return hangup();
   }
 
-  // Bygg Make-webhook-URL med alla parametrar som query-strängar
   const webhookUrl = new URL(TIMEOUT_WEBHOOK_URL);
   webhookUrl.searchParams.set("customer_phone", customerPhone);
   webhookUrl.searchParams.set("elk_number", elkNumber);
   webhookUrl.searchParams.set("company_name", companyName);
   webhookUrl.searchParams.set("sender_phone", senderPhone);
 
-  console.log(`Kopplar ${customerPhone} → ${senderPhone} (${companyName}), timeout 20s, whenhangup → Make`);
+  console.log(`[${callId || "no-callid"}] Kopplar ${customerPhone} → ${senderPhone} (${companyName}), timeout 15s`);
 
-  // whenhangup triggas av 46elks när samtalet avslutas, inklusive vid failed/busy.
-  // busy/failed definieras explicit som hangup så att 46elks alltid avslutar rent
-  // och whenhangup garanterat anropas oavsett utfall.
-  // Make-scenariot ska filtrera på state != "success" för att bara skicka SMS vid missade samtal.
   return {
     statusCode: 200,
     headers: { "Content-Type": "application/json" },

@@ -4,6 +4,7 @@
   "description": "Netlify functions for 46elks voice callback routing via Google Sheets",
   "private": true,
   "dependencies": {
+    "@netlify/blobs": "^8.0.0",
     "googleapis": "^144.0.0"
   }
 }
