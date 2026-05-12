@@ -1,5 +1,21 @@
 const { google } = require("googleapis");
-const { getStore } = require("@netlify/blobs");
+
+// Module-level cache: lever kvar i lambda-instansen mellan anrop.
+// Täcker rapid-retry-scenariot där 46elks anropar samma callid flera gånger snabbt.
+const seenCallIds = new Map();
+const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minuter
+
+function isDuplicate(callId) {
+  if (!callId) return false;
+  const now = Date.now();
+  // Rensa utgångna poster
+  for (const [id, ts] of seenCallIds) {
+    if (now - ts > DEDUP_TTL_MS) seenCallIds.delete(id);
+  }
+  if (seenCallIds.has(callId)) return true;
+  seenCallIds.set(callId, now);
+  return false;
+}
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
@@ -19,21 +35,10 @@ exports.handler = async (event) => {
   const elkNumber = params.get("to");
   const callId = params.get("callid");
 
-  // Dedupliceringskontroll: om samma callid redan behandlats inom 5 minuter, avbryt direkt
-  if (callId) {
-    try {
-      const store = getStore("call-dedup");
-      const alreadySeen = await store.get(callId);
-      if (alreadySeen) {
-        console.log("Duplikat callid ignorerat:", callId);
-        return hangup();
-      }
-      // Märk callid som hanterat, TTL 300 sekunder (5 minuter)
-      await store.set(callId, "1", { ttl: 300 });
-    } catch (e) {
-      // Om Blobs inte är tillgängligt loggar vi felet men blockerar inte samtalet
-      console.error("Dedup-cache fel (fortsätter ändå):", e.message);
-    }
+  // Dedupliceringskontroll baserad på callid
+  if (isDuplicate(callId)) {
+    console.log("Duplikat callid ignorerat:", callId);
+    return hangup();
   }
 
   if (!customerPhone || !elkNumber) {
